@@ -30,6 +30,7 @@ from ....htserver import exposed_http
 from ....htserver import make_json_response
 
 from ....plugins.atx import BaseAtx
+from ....plugins.msd import BaseMsd
 
 from ....validators import ValidatorError
 from ....validators import check_string_in_list
@@ -112,6 +113,38 @@ class RedfishApi:
 
     @exposed_http("POST", "/redfish/v1/Systems/0/Actions/ComputerSystem.Reset")
     async def __power_handler(self, request: Request) -> Response:
+        try:
+            action = check_string_in_list(
+                arg=(await request.json())["ResetType"],
+                name="Redfish ResetType",
+                variants=set(self.__actions),
+                lower=False,
+            )
+        except ValidatorError:
+            raise
+        except Exception:
+            raise HttpError("Missing Redfish ResetType", 400)
+        await self.__actions[action](False)
+        return Response(body=None, status=204)
+    # function for redfish virtual media upload
+
+    @exposed_http("POST", "/redfish/v1/Managers/0/VirtualMedia/0/Actions/VirtualMedia.InsertMedia")
+    async def __upload_media_handler(self, request: Request) -> Response:
+        # get image url from request
+        image_url = (await request.json())["Image"]
+        size = valid_int_f0(request.content_length)
+        written = 0
+        async with self.__msd.write_image(name, size, remove_incomplete) as writer:
+            chunk_size = writer.get_chunk_size()
+            while True:
+                chunk = await request.content.read(chunk_size)
+                if not chunk:
+                    break
+                written = await writer.write_chunk(chunk)
+        return make_json_response(self.__make_write_info(name, size, written))
+
+    @exposed_http("POST", "/redfish/v1/Managers/0/VirtualMedia/0/Actions/VirtualMedia.EjectMedia")
+    async def __eject_media_handler(self, request: Request) -> Response:
         try:
             action = check_string_in_list(
                 arg=(await request.json())["ResetType"],
